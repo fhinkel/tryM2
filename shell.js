@@ -39,7 +39,7 @@
 //
 // Using Node connect, but not express
 
-var process = function(userName, schroot, ondata){
+var shell = function(userName, schroot){
    var data = {
       pipe,
       userName,
