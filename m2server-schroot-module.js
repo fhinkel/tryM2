@@ -125,6 +125,9 @@ var M2Server = function(overrideOptions) {
         this.m2 = null;
         this.eventStream = [];
         this.clientID = null;
+        this.schrootType = null;
+        this.schrootName = null;
+        this.systemUserName = null;
         // generated randomly in startUser(), used for cookie and as user name
         // on the system
         this.recentlyRestarted = false;
@@ -164,6 +167,10 @@ var M2Server = function(overrideOptions) {
         clients[clientID].clientID = clientID;
 
         // Setting the schroot and system related variables.
+        clients[clientID].schrootType = 'system' + otherRandomNumber; // + 'st';
+        clients[clientID].schrootName = 'system' + otherRandomNumber; // + 'sn';
+        clients[clientID].systemUserName = 'system' + otherRandomNumber; // + 'sun';
+        clients[clientID].prepend = "";
         // For now we choose all these to be equal.
         // getClientIDFromURL does not work if we choose these to be different
         // from each other.
@@ -171,14 +178,63 @@ var M2Server = function(overrideOptions) {
 
         logClient(clientID, "New user: " + " UserAgent=" + request.headers[
             'user-agent'] + ".");
-        callbackFcn(clientID);
+        runShellCommand('perl-scripts/create_user.pl ' + clients[clientID].systemUserName +
+            ' ' + clients[clientID].schrootType + ' ' +
+            options.userMemoryLimit + ' ' + options.userCpuLimit, function(
+        ret) {
+            //console.log( "***" + ret );
+            logClient(clientID, "Spawning new schroot process named " +
+                clientID + " " + clients[clientID].systemUserName + ".");
+            /*
+               The following command creates a schroot environment for the user.
+               -c specifies the schroot type. This tells schroot to use the config file
+                  created by create_user.pl. The -c below at entering schroot is not the same.
+               -n Sets the name of the schroot. This name will be used for the -c option
+                  below upon entering the schroot.
+               -b is the begin flag.
+             */
+            require('child_process').exec('sudo -u ' + clients[clientID].systemUserName +
+                ' schroot -c ' + clients[clientID].schrootType + ' -n ' +
+                clients[clientID].schrootName + ' -b', function() {
+                // write cookie to /etc/clientID, it is needed for curl in open calls
+                var filename = "/usr/local/var/lib/schroot/mount/" + clients[
+                    clientID].systemUserName + "/etc/clientID";
+                fs.writeFile(filename, clientID, function(err) {
+                    if (err) {
+                        logClient(clientID, err);
+                    } else {
+                        logClient(clientID,
+                            "File with clientID ie., the user cookie, was written successfully.");
+                    }
+                });
+                callbackFcn(clientID);
+            });
+
+        });
         return clientID;
     };
 
     var m2Start = function(clientID) {
         var spawn = require('child_process').spawn;
-        m2 = spawn('M2');
-        logClient(clientID, "Spawning new M2 process...");
+        /*
+            Starting M2 in a secure way requires several steps:
+            1. cgexec adds our process to two cgroups that create_user.pl created.
+               cpu:clientID restricts the CPU shares of the user
+               memory:clientID restricts the memory accessible by the user
+            2. schroot enters a secure chroot environment. No files from the actual
+               system are available on the inside.
+               -u specifies the username inside the schroot
+               -c specifies the name of the schroot we want to enter
+               -d specifies the directory inside the schroot we want to enter
+               -r specifies the command to be run upon entering.
+         */
+        var m2 = spawn('sudo', ['cgexec', '-g', 'cpu,memory:' + clients[
+                clientID].systemUserName,
+                'sudo', '-u', clients[clientID].systemUserName, 'nice',
+                'schroot', '-c', clients[clientID].schrootName,
+                '-u', clients[clientID].systemUserName, '-d', '/home/m2user/',
+                '-r', 'M2'
+        ]);
 
         m2.on('exit', function(returnCode, signal) {
             // the schroot might still be valid or unmounted
@@ -392,7 +448,20 @@ var M2Server = function(overrideOptions) {
             }
             if (clients[clientID] && clients[clientID].m2) {
                 var m2 = clients[clientID].m2;
-                m2.kill('SIGINT');
+                /* To find the actual M2 we have to dig a little deeper:
+                  The m2.pid is the PID of the cgexec command.
+                  Using pgrep we gets the child process(es).
+                  In this case there is only one, namely the schroot.
+                  The child of the schroot then is M2 which we want to interrupt.
+               */
+                runShellCommand('n=`pgrep -P ' + m2.pid +
+                    '`; n=`pgrep -P $n`; pgrep -P $n', function(m2Pid) {
+                    //runShellCommand('pgrep -P `pgrep -P ' + m2.pid +'`', function(m2Pid) {
+                    logClient(clientID, "PID of M2 inside schroot: " +
+                        m2Pid);
+                    var cmd = 'kill -s INT ' + m2Pid;
+                    runShellCommand(cmd, function(res) {});
+                });
             }
             response.writeHead(200);
             response.end();
@@ -428,12 +497,14 @@ var M2Server = function(overrideOptions) {
         //     where 12345 is the pid of the M2 process.
         var clientID;
         var matchobject;
-        matchobject = url.match(/\/M2-(\d+)-/);
+        // This needs to be changed. What we might get here is only
+        // the username. We need to match the clientID from this.
+        matchobject = url.match(/^\/(user\d+)\//);
         if (!matchobject) {
             console.log("error, could not find clientID from url");
             throw ("could not find clientID from url");
         }
-        clientID = findClientID(matchobject[1]);
+        clientID = matchobject[1];
         return clientID;
     };
 
@@ -469,6 +540,9 @@ var M2Server = function(overrideOptions) {
             }
 
             var path = parseUrlForPath(url); // a string
+            path = "/usr/local/var/lib/schroot/mount/" + clients[clientID].schrootName +
+                path
+
             message = 'event: image\r\ndata: ' + path + "\r\n\r\n";
             if (!client.eventStream || client.eventStream.length == 0) { // fatal error, should not happen
                 logClient(clientID, "Error: No event stream");
@@ -499,6 +573,10 @@ var M2Server = function(overrideOptions) {
             }
 
             var path = parseUrlForPath(url); // a string
+
+            // path is of the form file:///M2/share/....html
+            // This will fail if we split the clientID.
+            path = path.match(/^file:\/\/(.*)/)[1];
 
             message = 'event: viewHelp\r\ndata: ' + path + "\r\n\r\n";
             if (!client.eventStream || client.eventStream.length == 0) { // fatal error, should not happen
@@ -539,13 +617,14 @@ var M2Server = function(overrideOptions) {
             logClient(clientID, "received: /upload");
             var formidable = require('formidable');
             var form = new formidable.IncomingForm;
+            var schrootPath;
+            schrootPath = "/usr/local/var/lib/schroot/mount/" + clients[
+                clientID].schrootName +
+                "/home/m2user/";
+            form.uploadDir = schrootPath;
 
             form.on('file', function(name, file) {
-                if (options.SCHROOT) {
-                    var newpath = schrootPath;
-                } else {
-                    newpath = "/tmp/";
-                }
+                var newpath = schrootPath;
                 // I think it is only renamed when the full file arrived
                 fs.rename(file.path, newpath + file.name, function(error) {
                     if (error) {
@@ -556,6 +635,11 @@ var M2Server = function(overrideOptions) {
                         response.end('rename failed: ' + error);
                         return;
                     }
+                    runShellCommand("chown " + clients[clientID].systemUserName +
+                        ":" + clients[clientID].systemUserName + " " + newpath +
+                        file.name, function(e) {
+                        console.log("Chown: " + e);
+                    });
                 });
             });
 
@@ -584,6 +668,8 @@ var M2Server = function(overrideOptions) {
             logClient(clientID, "received: /save");
             // Set the directory where we will write the resulting 2 files
             var path = "/tmp/";
+            path = "/usr/local/var/lib/schroot/mount/" + clients[clientID].schrootName +
+                "/home/m2user/";
             var body = "";
 
             // When we get a chunk of data, add it to the body
@@ -637,10 +723,8 @@ var M2Server = function(overrideOptions) {
 
     var initializeServer = function() {
         // when run in production, work with schroots, see startM2Process()
-        if (options.SCHROOT) {
-            console.log('Running with schroots.');
-            setInterval(pruneClients, options.PRUNECLIENTINTERVAL);
-        }
+        console.log('Running with schroots.');
+        setInterval(pruneClients, options.PRUNECLIENTINTERVAL);
 
         // Send a comment to the clients every 20 seconds so they don't 
         // close the connection and then reconnect
