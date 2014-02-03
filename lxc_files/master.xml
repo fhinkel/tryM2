@@ -1,0 +1,53 @@
+<domain type='lxc'>
+  <name>master</name>
+  <memory unit='GiB'>2</memory>
+  <currentMemory unit='GiB'>2</currentMemory>
+  <memtune>
+    <hard_limit unit='GiB'>2</hard_limit>
+    <swap_hard_limit unit='GiB'>2</swap_hard_limit>
+  </memtune>
+  <vcpu placement='static' cpuset='2-3'>2</vcpu>
+  <os>
+    <type arch='x86_64'>exe</type>
+    <init>/sbin/init</init>
+  </os>
+  <clock offset='utc'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>restart</on_crash>
+  <devices>
+    <emulator>/usr/libexec/libvirt_lxc</emulator>
+    <filesystem type='mount' accessmode='passthrough'>
+      <source dir='/zfs_jails/gentoo_master'/>
+      <target dir='/'/>
+    </filesystem>
+    <filesystem type='mount' accessmode='passthrough'>
+      <source dir='/usr/portage'/>
+      <target dir='/var/portage/tree'/>
+      <readonly/>
+    </filesystem>
+    <filesystem type='mount' accessmode='passthrough'>
+      <source dir='/usr/portage/distfiles'/>
+      <target dir='/var/portage/distfiles_ro'/>
+      <readonly/>
+    </filesystem>
+    <filesystem type='ram' accessmode='passthrough'>
+      <source usage='131072' units='KiB'/>
+      <target dir='/run'/>
+    </filesystem>
+    <filesystem type='ram' accessmode='passthrough'>
+      <source usage='524288' units='KiB'/>
+      <target dir='/tmp'/>
+    </filesystem>
+    <filesystem type='ram' accessmode='passthrough'>
+      <source usage='262144' units='KiB'/>
+      <target dir='/dev/shm'/>
+    </filesystem>
+    <interface type='network'>
+      <source network='default'/>
+    </interface>
+    <console type='pty'>
+      <target type='lxc' port='0'/>
+    </console>
+  </devices>
+</domain>
