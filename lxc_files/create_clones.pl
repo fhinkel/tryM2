@@ -5,13 +5,22 @@ $ram = 512;
 $zfs_original = "zfs_jails/master@1";
 $zfs_prefix = "zfs_jails\/";
 
-generate_xml_files();
+generate_clones();
 
 
-sub generate_xml_files{
+
+sub generate_clones{
    for(my $i=1; $i<=$number; $i++){
+      zfs_clone_snapshot($i);
       generate_xml_file($i);
+
+
    }
+}
+
+sub zfs_clone_snapshot{
+   my($i) = @_;
+   system "zfs create ".$zfs_original." ".$zfs_prefix."clone".$i;
 }
 
 sub generate_xml_file{
