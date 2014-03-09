@@ -3,9 +3,8 @@ use XML::XPath;
 use XML::XPath::XMLParser;
 
 $cpus = 1;
-$number = 1;
 $ram = 512;
-$zfs_original = "zfs_jails/gentoo_master\@singular";
+$zfs_original = "zfs_jails\/gentoo_master\@singular";
 $zfs_prefix = "zfs_jails\/linux_containers\/";
 $new_containers_file = "\/home\/admin\/trySingular\/new_containers";
 $dead_lxc_path = "\/home\/admin\/trySingular\/dead_lxcs\/";
@@ -48,7 +47,7 @@ sub remove_from_system{
 
 sub generate_3_new_containers{
    my $sample_xml = read_file($sample_xml_file);
-   my @uuid_mac = ();
+   my %mac_addresses;
    for(my $i=0; $i<3; $i++){
       my $name = get_random_string(20);
       zfs_clone_snapshot($name);
@@ -57,16 +56,16 @@ sub generate_3_new_containers{
       $container->create();
       my $mac_address = get_mac_address($container);
       my $uuid = $container->get_uuid_string();
-      push @uuid_mac, $uuid." *** ".$mac_address;
+      $mac_addresses{$uuid} = $mac_address;
    }
-   save_mac_addresses_to_file(@uuid_mac);
+   save_mac_addresses_to_file(%mac_addresses);
 }
 
 sub save_mac_addresses_to_file{
-   my(@addresses) = @_;
+   my(%addresses) = @_;
    open (FILE, ">>".$new_containers_file);
-   foreach my $address (@addresses){
-      print FILE $address."\n";
+   foreach my $key (keys %addresses){
+      print FILE $key." *** ".$addresses{$key}."\n";
    }
    close (FILE);
 }
