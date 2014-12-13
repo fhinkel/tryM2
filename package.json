@@ -1,5 +1,16 @@
-{    "name": "m2server",
+{
+    "name": "m2server",
     "version": "1.0.0",
-    "description": "TryM2, allows to use Macaulay2 in a browser",    
-    "dependencies": { "cookies": "0.3.6", "connect": "2.7.3", "formidable": ">=1.0.13" }
+    "description": "TryM2, allows to use Macaulay2 in a browser",
+    "dependencies": {
+        "cookies": "0.3.6",
+        "connect": "2.7.3",
+        "formidable": ">=1.0.13"
+    },
+    "scripts": {
+        "start": "node m2server.js",
+        "test": "mocha tests/mocha.js --reporter spec",
+        "forever": "forever start -l /home/webm2.logs/forever.log -o /home/webm2.logs/out.log -e /home/webm2.logs/err.log --append m2server-schroot.js",
+        "stop": "kill `ps ax | grep m2server | grep -v monitor | grep node | awk '{print $1}'`"
+    }
 }
